@@ -1,6 +1,29 @@
 import _ from 'lodash'
 import { createServer } from 'node:http'
+import { Session } from 'node:inspector/promises'
+import { writeFile } from 'node:fs/promises'
 
+function cpuProfiling() {
+    let _session
+    _session = new Session()
+    return {
+        async start() {
+            _session.connect()
+            await _session.post("Profiler.enable")
+            await _session.post("Profiler.start")
+
+            console.log('started CPU Profiling');
+        },
+        async stop() {
+
+            console.log('stopping CPU Profiling')
+            const { profile } = await _session.post("Profiler.stop")
+            const profileName = `cpu-profile-${Date.now()}.cpuprofile`
+            await writeFile(profileName, JSON.stringify(profile))
+            _session.disconnect()
+        },
+    }
+}
 
 const largeDataset = Array.from({ length: 1e4 }, (_, id) => ({
     id,
@@ -52,3 +75,15 @@ createServer(
     .once('listening', function onListening() {
         console.log('Server started on http://localhost:3000');
     });
+
+const { start, stop } = cpuProfiling()
+
+start()
+
+const exitSignals = ['SIGINT', 'SIGTERM', 'SIGQUIT']
+exitSignals.forEach(signal => {
+    process.once(signal, async () => {
+        await stop()
+        process.exit(0)
+    })
+})
